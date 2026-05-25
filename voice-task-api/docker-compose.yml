@@ -1,0 +1,11 @@
+services:
+  voice-task-api:
+    build: .
+    container_name: voice-task-api
+    restart: unless-stopped
+    ports:
+      # Change the left number (host port) to any free port on your Unraid server.
+      # The right number (8080) is the container's internal port — leave it as-is.
+      - "8080:8080"
+    env_file:
+      - .env
