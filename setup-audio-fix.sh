@@ -4,6 +4,9 @@ set -e
 # Fixes stereo speakers losing a channel after USB audio headset is unplugged.
 # Creates a udev rule + systemd user service that resets the built-in card profile on unplug.
 #
+# Distro: Ubuntu 22.04+ / Kubuntu 22.04+ with PipeWire (not PulseAudio).
+#         Will not run on other distributions or systems without PipeWire.
+#
 # Usage:
 #   sudo ./setup-audio-fix.sh [--user USERNAME] [--usb-id VENDOR:PRODUCT]
 #
@@ -21,6 +24,17 @@ RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m'
+
+# Verify required programs are present before doing anything
+MISSING=()
+for CMD in pactl systemctl udevadm loginctl; do
+    command -v "$CMD" &>/dev/null || MISSING+=("$CMD")
+done
+if [[ ${#MISSING[@]} -gt 0 ]]; then
+    echo -e "${RED}Missing required programs: ${MISSING[*]}${NC}"
+    echo "This script requires Ubuntu/Kubuntu 22.04+ with PipeWire. Exiting."
+    exit 1
+fi
 
 if [[ $EUID -ne 0 ]]; then
     echo -e "${RED}Run with sudo: sudo $0${NC}"
