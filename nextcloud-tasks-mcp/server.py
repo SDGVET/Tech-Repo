@@ -52,6 +52,33 @@ def _parse_todo(todo) -> dict:
     }
 
 
+def _ical_escape(value: str) -> str:
+    """Escape a TEXT value per RFC 5545 §3.3.11."""
+    value = value.replace("\\", "\\\\")   # must be first
+    value = value.replace(";", "\\;")
+    value = value.replace(",", "\\,")
+    # Normalise all newline styles to the iCal escaped literal \n
+    value = value.replace("\r\n", "\\n").replace("\r", "\\n").replace("\n", "\\n")
+    return value
+
+
+def _ical_fold(line: str) -> str:
+    """Fold a content line at 75 octets per RFC 5545 §3.1."""
+    encoded = line.encode("utf-8")
+    if len(encoded) <= 75:
+        return line
+    parts = []
+    while len(encoded) > 75:
+        cut = 75
+        # Don't split inside a multi-byte UTF-8 sequence
+        while cut > 0 and (encoded[cut] & 0xC0) == 0x80:
+            cut -= 1
+        parts.append(encoded[:cut].decode("utf-8"))
+        encoded = encoded[cut:]
+    parts.append(encoded.decode("utf-8"))
+    return "\r\n ".join(parts)
+
+
 def _build_vtodo_ical(
     summary: str,
     uid: str,
@@ -69,13 +96,13 @@ def _build_vtodo_ical(
         "BEGIN:VTODO",
         f"UID:{uid}",
         f"DTSTAMP:{now}",
-        f"SUMMARY:{summary}",
+        _ical_fold(f"SUMMARY:{_ical_escape(summary)}"),
         f"STATUS:{status}",
     ]
     if priority is not None:
         lines.append(f"PRIORITY:{priority}")
     if notes:
-        lines.append(f"DESCRIPTION:{notes}")
+        lines.append(_ical_fold(f"DESCRIPTION:{_ical_escape(notes)}"))
     if due_date:
         dt = datetime.strptime(due_date, "%Y-%m-%d").date()
         lines.append(f"DUE;VALUE=DATE:{dt.strftime('%Y%m%d')}")
