@@ -50,9 +50,22 @@ keyfile is root-only (`0600`), same as on any laptop that has joined LWVC.
    (Ventoy alternative: put the ISO on a Ventoy stick and use Ventoy's
    autoinstall plugin pointing at this yaml — one stick instead of two.)
 
-4. Boot the new machine with **ethernet plugged in** (packages download
-   during install), both USB sticks inserted. The installer detects the
-   CIDATA volume and asks to confirm running the automated install.
+4. Boot the new machine with both USB sticks inserted. The installer detects
+   the CIDATA volume and asks to confirm running the automated install.
+
+   **Networking during install:** these workstations have no ethernet, so the
+   `network:` block in the yaml joins wifi from *inside the installer* (it
+   tries both **LWVC** at the office and **Epigenetics** at home, connecting
+   to whichever is in range). Packages, the Ubuntu Pro attach, and security
+   updates all download during install, so it must get online here. Caveats:
+   - The wifi NIC must have a driver + firmware present in the live installer.
+     Most Intel/Realtek/Atheros chips are covered by the ISO's linux-firmware;
+     an exotic adapter may not be. If wifi never comes up, switch to a
+     **USB-to-ethernet dongle** for the install — the first-boot wifi profiles
+     are already configured, so the machine still ends up on wifi afterward.
+   - To debug a stuck install, Alt-F2 to a shell and check `ip addr` /
+     `journalctl -u systemd-networkd`. `ip link` shows the real NIC name if
+     the `match: "wl*"` glob needs replacing with a literal name.
 
 5. The only prompt is **hostname / username / password** (the
    `interactive-sections: [identity]` block). Fill those per employee.
