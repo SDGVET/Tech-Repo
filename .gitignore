@@ -1,1 +1,5 @@
 kwin-dolphin-touchpad-notes.md
+
+# Contains plaintext secrets (LWVC WPA3-SAE passphrase, Ubuntu Pro token,
+# Landscape registration key) — install USB only, never in this public repo.
+kubuntu-autoinstall/autoinstall.yaml
