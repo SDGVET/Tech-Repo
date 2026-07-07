@@ -58,14 +58,27 @@ keyfile is root-only (`0600`), same as on any laptop that has joined LWVC.
    tries both **LWVC** at the office and **Epigenetics** at home, connecting
    to whichever is in range). Packages, the Ubuntu Pro attach, and security
    updates all download during install, so it must get online here. Caveats:
+   - **The Server live ISO doesn't ship `wpa_supplicant`**, so wifi during
+     install is impossible stock — the symptom is an install that fails at
+     the package step with "Unable to locate package plasma-desktop"
+     (universe is only reachable online). The yaml's `early-commands`
+     handles this: it installs `wpasupplicant` + `libpcsclite1` from the
+     ISO's own pool (`/cdrom/pool/...`) right before the network comes up.
+     If Canonical ever drops those debs from the ISO pool, put copies on
+     the CIDATA stick and point the dpkg line there instead.
    - The wifi NIC must have a driver + firmware present in the live installer.
      Most Intel/Realtek/Atheros chips are covered by the ISO's linux-firmware;
      an exotic adapter may not be. If wifi never comes up, switch to a
      **USB-to-ethernet dongle** for the install — the first-boot wifi profiles
      are already configured, so the machine still ends up on wifi afterward.
+   - The yaml must name the wifi interface **literally** (currently
+     `wlp0s20f3`) — netplan's networkd backend does not allow `match:`
+     globs for wifi, and using one fails the install immediately with
+     "problem applying the network configuration". On a different hardware
+     model, Alt-F2 to a shell, run `ip link`, and put that machine's `wl*`
+     name in the yaml before installing.
    - To debug a stuck install, Alt-F2 to a shell and check `ip addr` /
-     `journalctl -u systemd-networkd`. `ip link` shows the real NIC name if
-     the `match: "wl*"` glob needs replacing with a literal name.
+     `journalctl -u systemd-networkd`.
 
 5. The only prompt is **hostname / username / password** (the
    `interactive-sections: [identity]` block). Fill those per employee.
