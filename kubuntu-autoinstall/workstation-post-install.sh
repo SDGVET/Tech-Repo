@@ -46,20 +46,27 @@ fi
 
 # ---- VetBadger web app (installed as a Chrome PWA) -------------------------
 # Force-install the VetBadger PWA fleet-wide via Chrome enterprise policy.
-# On the next Chrome launch this installs a real installed web app (its own
-# window, icon from the site manifest, and a desktop/app-menu shortcut) for
-# whichever user is logged in -- no per-user setup, so it survives the
-# interactive username prompt. To add more web apps later, append more
-# objects to WebAppInstallForceList.
+# url points at login.vetbadger.com's login page, which serves the PWA manifest
+# (name + icon) WITHOUT auth. Force-installing the clinic subdomain
+# (livingwatersvet.vetbadger.com) instead produced a broken PLACEHOLDER app with
+# no icon, because that host redirects to login before exposing a manifest.
+# custom_name keeps the label "VetBadger". Verified on a live machine: this
+# installs with VetBadger's real icon straight from the manifest, so no
+# custom_icon override (and no hosted icon file) is needed.
+#
+# Chrome's apt install above is synchronous, but guard anyway so the policy is
+# never written before Chrome (and its /etc/opt/chrome tree) is fully installed.
+for i in $(seq 1 30); do dpkg -s google-chrome-stable >/dev/null 2>&1 && break; sleep 2; done
 log "Configuring VetBadger web app (Chrome force-install policy)..."
 mkdir -p /etc/opt/chrome/policies/managed
 cat > /etc/opt/chrome/policies/managed/sdgvet-web-apps.json <<'EOF'
 {
   "WebAppInstallForceList": [
     {
-      "url": "https://livingwatersvet.vetbadger.com/",
+      "url": "https://login.vetbadger.com/login?originator=%2Fhome",
       "create_desktop_shortcut": true,
-      "default_launch_container": "window"
+      "default_launch_container": "window",
+      "custom_name": "VetBadger"
     }
   ]
 }
@@ -186,19 +193,22 @@ fi
 # autostart applies them. The power profiles are just a config file PowerDevil
 # reads at login, so we write it straight into the user's home.
 
-# SDDM login screen -> Breeze. A drop-in named 50-* sorts AFTER the packaged
-# 20-kubuntu.conf (Current=kubuntu) so it wins on a fresh image; a later change
-# via System Settings writes kde_settings.conf, which still overrides us.
-# DISABLED 2026-07-07 (theming off while debugging first-login black screen) --
-# re-enable by removing this `if false; then ... fi` wrapper.
-if false; then
-log "Setting SDDM login theme to Breeze..."
+# SDDM login theme. A `budgie-sddm-theme` package got pulled onto this Plasma
+# build and ships /etc/sddm.conf.d/50-ubuntu-budgie.conf, which forced the
+# Ubuntu Budgie greeter -- and since it sorts after our old 50-sdgvet-theme.conf
+# it silently overrode us too (this is why the login "kept showing the old
+# sddm"). Purge it, then set Breeze via a 90-* drop-in that sorts LAST so
+# nothing (budgie, kubuntu-settings, a later kde_settings.conf, etc.) beats it.
+# Greeter only -- unrelated to the first-login session black screen, so this
+# stays enabled while the session theming is off.
+log "Removing Budgie SDDM theme, setting Breeze login screen..."
+apt-get purge -y budgie-sddm-theme >/dev/null 2>&1 || true
 mkdir -p /etc/sddm.conf.d
-cat > /etc/sddm.conf.d/50-sdgvet-theme.conf <<'EOF'
+rm -f /etc/sddm.conf.d/50-sdgvet-theme.conf   # retire the old name budgie beat
+cat > /etc/sddm.conf.d/90-sdgvet-theme.conf <<'EOF'
 [Theme]
 Current=breeze
 EOF
-fi
 
 # Helper that applies the per-user Plasma bits that need the live session on
 # first login: dark theme, Honeywave wallpaper, and natural scrolling. (Taskbar
@@ -256,6 +266,11 @@ PY
 # cursor at first login). Needs a safe, non-live-edit approach before re-enabling
 # -- see memory note [[workstation-autoinstall-project]]. VetBadger and Chrome
 # still get menu entries; Calculator is a stock app; Konsole stays for now.
+
+# Launch the Nextcloud desktop client once so it registers itself in autostart
+# (it writes its own ~/.config/autostart entry on first run) and shows the
+# employee the account sign-in prompt.
+command -v nextcloud >/dev/null 2>&1 && nohup nextcloud >/dev/null 2>&1 &
 EOF
 chmod 755 /usr/local/bin/sdgvet-first-login-appearance.sh
 fi
@@ -340,24 +355,12 @@ EOF
     fi
     # end DISABLED (autostart theming + power profiles + auto-lock)
 
-    # Pre-create the VetBadger launcher so the taskbar pin (added by the
-    # first-login helper) resolves from login one, instead of only after Chrome
-    # first runs and the force-installed PWA writes this file itself. Same
-    # app-id/filename Chrome uses, so it's not a duplicate -- Chrome just
-    # rewrites it on PWA install. The icon resolves once Chrome drops its PNG.
-    log "Pre-creating VetBadger launcher for $USER_NAME..."
-    install -d -o "$USER_NAME" -g "$USER_NAME" "$USER_HOME/.local/share/applications"
-    cat > "$USER_HOME/.local/share/applications/chrome-ojdepafgebajpbdahdokdolkoekmbooa-Default.desktop" <<'EOF'
-[Desktop Entry]
-Version=1.0
-Terminal=false
-Type=Application
-Name=VetBadger
-Exec=/opt/google/chrome/google-chrome --profile-directory=Default --app-id=ojdepafgebajpbdahdokdolkoekmbooa
-Icon=chrome-ojdepafgebajpbdahdokdolkoekmbooa-Default
-StartupWMClass=crx_ojdepafgebajpbdahdokdolkoekmbooa
-EOF
-    chown "$USER_NAME:$USER_NAME" "$USER_HOME/.local/share/applications/chrome-ojdepafgebajpbdahdokdolkoekmbooa-Default.desktop"
+    # (Removed: the hand-written VetBadger .desktop placeholder that used to
+    # live here. It existed only so the now-disabled taskbar pin would resolve,
+    # and it SHADOWED the real shortcut -- leaving a generic/iconless entry. The
+    # Chrome force-install policy above (with custom_name/custom_icon) now owns
+    # the VetBadger launcher and its icon.)
+    :
 else
     log "WARN: no UID 1000 user found; skipping per-user desktop defaults."
 fi
