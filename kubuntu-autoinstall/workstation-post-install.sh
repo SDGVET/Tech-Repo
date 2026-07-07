@@ -15,6 +15,16 @@ CANON_TARBALL="https://github.com/SDGVET/Tech-Repo/releases/download/1.0/linux-U
 WORKDIR="$(mktemp -d)"
 trap 'rm -rf "$WORKDIR"' EXIT
 
+# On first boot cloud-init sends our stdout/stderr to /var/log/sdgvet-post-
+# install.log, so nothing shows on screen and the install looks frozen. Mirror
+# everything to the system console too, so you can watch progress live by
+# switching to a text console (Ctrl+Alt+F3) during first boot. tee keeps
+# writing to the log file (its inherited stdout) as well. Skipped when the
+# script is run by hand (stdout is a tty) to avoid double-printing.
+if ! [ -t 1 ]; then
+    exec > >(tee /dev/console) 2>&1
+fi
+
 log() { echo "[$(date '+%F %T')] $*"; }
 
 # ---- wait for network (first boot may still be associating with wifi) ----
