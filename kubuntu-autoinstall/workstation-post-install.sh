@@ -189,17 +189,25 @@ fi
 # SDDM login screen -> Breeze. A drop-in named 50-* sorts AFTER the packaged
 # 20-kubuntu.conf (Current=kubuntu) so it wins on a fresh image; a later change
 # via System Settings writes kde_settings.conf, which still overrides us.
+# DISABLED 2026-07-07 (theming off while debugging first-login black screen) --
+# re-enable by removing this `if false; then ... fi` wrapper.
+if false; then
 log "Setting SDDM login theme to Breeze..."
 mkdir -p /etc/sddm.conf.d
 cat > /etc/sddm.conf.d/50-sdgvet-theme.conf <<'EOF'
 [Theme]
 Current=breeze
 EOF
+fi
 
 # Helper that applies the per-user Plasma bits that need the live session on
-# first login: dark theme, Honeywave wallpaper, natural scrolling, and taskbar
-# pins. Waits for plasmashell so D-Bus calls and config edits don't race the
+# first login: dark theme, Honeywave wallpaper, and natural scrolling. (Taskbar
+# pinning was here too but is DISABLED -- it black-screened the desktop; see
+# the pins note below.) Waits for plasmashell so the D-Bus calls don't race the
 # desktop coming up.
+# DISABLED 2026-07-07 (theming off while debugging first-login black screen) --
+# re-enable by removing this `if false; then ... fi` wrapper.
+if false; then
 log "Installing first-login Plasma helper..."
 cat > /usr/local/bin/sdgvet-first-login-appearance.sh <<'EOF'
 #!/bin/bash
@@ -243,37 +251,15 @@ flush()
 open(p,"w").write("\n".join(out))
 PY
 
-# Taskbar pins: add Chrome, VetBadger, Calculator; drop Konsole. The pin list
-# lives on the task-manager applet's launchers= key in the panel config. Edit
-# it in place, keeping whatever other default pins exist, then reload the shell.
-APPLETS="$HOME/.config/plasma-org.kde.plasma.desktop-appletsrc"
-[ -f "$APPLETS" ] && python3 - "$APPLETS" <<'PY'
-import sys
-p=sys.argv[1]
-want=["applications:google-chrome.desktop",
-      "applications:chrome-ojdepafgebajpbdahdokdolkoekmbooa-Default.desktop",
-      "applications:org.kde.kcalc.desktop"]
-out=[]
-for l in open(p).read().split("\n"):
-    if l.startswith("launchers="):
-        items=[x for x in l[len("launchers="):].split(",") if x]
-        items=[x for x in items if "konsole" not in x.lower()]
-        for w in want:
-            if not any(w.split(":")[-1]==x.split(":")[-1] for x in items):
-                items.append(w)
-        out.append("launchers="+",".join(items))
-    else:
-        out.append(l)
-open(p,"w").write("\n".join(out))
-PY
-
-# Ask plasmashell to reload the edited panel config (qdbus name varies by ver).
-for q in qdbus qdbus6 qdbus-qt6; do
-    command -v "$q" >/dev/null 2>&1 && "$q" org.kde.plasmashell /PlasmaShell \
-        org.kde.PlasmaShell.refreshCurrentShell 2>/dev/null && break
-done
+# Taskbar pins: DISABLED. Editing the live panel appletsrc + refreshCurrentShell
+# left plasmashell unable to load on a fresh image (black screen with only a
+# cursor at first login). Needs a safe, non-live-edit approach before re-enabling
+# -- see memory note [[workstation-autoinstall-project]]. VetBadger and Chrome
+# still get menu entries; Calculator is a stock app; Konsole stays for now.
 EOF
 chmod 755 /usr/local/bin/sdgvet-first-login-appearance.sh
+fi
+# end DISABLED (first-login theming helper)
 
 # Drop the one-shot autostart entry into the employee's account. The account
 # is created interactively during install as UID 1000, and this first-boot
@@ -282,6 +268,10 @@ chmod 755 /usr/local/bin/sdgvet-first-login-appearance.sh
 USER_NAME="$(getent passwd 1000 | cut -d: -f1)"
 USER_HOME="$(getent passwd 1000 | cut -d: -f6)"
 if [ -n "$USER_NAME" ] && [ -d "$USER_HOME" ]; then
+    # DISABLED 2026-07-07 (first-login theming autostart + power profiles +
+    # auto-lock off, while debugging the black screen) -- re-enable by removing
+    # this `if false; then ... fi` wrapper.
+    if false; then
     log "Seeding first-login appearance autostart for $USER_NAME..."
     install -d -o "$USER_NAME" -g "$USER_NAME" "$USER_HOME/.config/autostart"
     cat > "$USER_HOME/.config/autostart/sdgvet-appearance.desktop" <<'EOF'
@@ -347,6 +337,8 @@ LockOnResume=false
 Timeout=0
 EOF
     chown "$USER_NAME:$USER_NAME" "$USER_HOME/.config/kscreenlockerrc"
+    fi
+    # end DISABLED (autostart theming + power profiles + auto-lock)
 
     # Pre-create the VetBadger launcher so the taskbar pin (added by the
     # first-login helper) resolves from login one, instead of only after Chrome
@@ -395,5 +387,9 @@ chmod 600 /etc/netplan/01-network-manager-all.yaml
 # 4. apply; NM then reconnects via the keyfiles above
 netplan apply || log "ERROR: netplan apply failed"
 systemctl restart NetworkManager || true
+# 5. networkd no longer manages any interface, so its wait-online service just
+#    times out (~120s) every boot, making boot take minutes. Disable it --
+#    NetworkManager-wait-online covers "system is online" now.
+systemctl disable --now systemd-networkd-wait-online.service 2>/dev/null || true
 
 log "Post-install complete."
