@@ -132,6 +132,44 @@ flatpak install -y --noninteractive --system flathub me.proton.Mail \
 log "Enabling firewall (ufw)..."
 ufw --force enable || log "ERROR enabling ufw"
 
+# ---- Quiet graphical boot (Kubuntu-style Plymouth splash) -----------------
+# Ubuntu Server boots verbose -- the scrolling green "[ OK ]" systemd log,
+# which looks alarming to non-technical staff. Make it boot like Kubuntu: a
+# quiet kernel with the Kubuntu logo splash, and a hidden GRUB menu.
+# plymouth-theme-kubuntu-logo is already in the package list; we just select
+# it (rebuilding the initramfs so the splash is available early) and add
+# quiet/splash to the kernel command line. Employees never see the verbose
+# boot -- it only happens during imaging, before this runs.
+log "Configuring quiet graphical (Plymouth) boot..."
+if command -v plymouth-set-default-theme >/dev/null 2>&1; then
+    plymouth-set-default-theme -R kubuntu-logo || log "ERROR setting plymouth theme"
+else
+    log "WARN: plymouth not installed; skipping splash theme."
+fi
+GRUBCFG=/etc/default/grub
+if [ -f "$GRUBCFG" ]; then
+    # quiet + splash on the kernel cmdline (Server ships this empty)
+    if grep -q '^GRUB_CMDLINE_LINUX_DEFAULT=' "$GRUBCFG"; then
+        sed -i 's/^GRUB_CMDLINE_LINUX_DEFAULT=.*/GRUB_CMDLINE_LINUX_DEFAULT="quiet splash"/' "$GRUBCFG"
+    else
+        echo 'GRUB_CMDLINE_LINUX_DEFAULT="quiet splash"' >> "$GRUBCFG"
+    fi
+    # Hide the GRUB menu (hold Shift/Esc at boot to show it for recovery)
+    if grep -q '^GRUB_TIMEOUT_STYLE=' "$GRUBCFG"; then
+        sed -i 's/^GRUB_TIMEOUT_STYLE=.*/GRUB_TIMEOUT_STYLE=hidden/' "$GRUBCFG"
+    else
+        echo 'GRUB_TIMEOUT_STYLE=hidden' >> "$GRUBCFG"
+    fi
+    if grep -q '^GRUB_TIMEOUT=' "$GRUBCFG"; then
+        sed -i 's/^GRUB_TIMEOUT=.*/GRUB_TIMEOUT=0/' "$GRUBCFG"
+    else
+        echo 'GRUB_TIMEOUT=0' >> "$GRUBCFG"
+    fi
+    update-grub || log "ERROR running update-grub"
+else
+    log "WARN: /etc/default/grub not found; skipping kernel cmdline update."
+fi
+
 # ---- Desktop defaults (appearance + power) --------------------------------
 # SDDM login theme is system-wide (set here). The Plasma dark theme + Honeywave
 # wallpaper need the live Plasma session/D-Bus, so a one-shot first-login
