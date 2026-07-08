@@ -290,6 +290,12 @@ USER_HOME="$(getent passwd 1000 | cut -d: -f6)"
 if [ -n "$USER_NAME" ] && [ -d "$USER_HOME" ]; then
     log "Seeding first-login appearance autostart for $USER_NAME..."
     install -d -o "$USER_NAME" -g "$USER_NAME" "$USER_HOME/.config/autostart"
+    # `install -d` only chowns the FINAL dir, so if it had to create ~/.config
+    # itself (fresh first boot, before the user has ever logged in) that parent
+    # is left owned by root -- which then blocks the user's own apps (Nextcloud,
+    # KDE, ...) from writing their config. Re-own ~/.config to the user. This is
+    # why we ALSO run a broad chown of $USER_HOME/.config at the end of this block.
+    chown "$USER_NAME:$USER_NAME" "$USER_HOME/.config"
     cat > "$USER_HOME/.config/autostart/sdgvet-appearance.desktop" <<'EOF'
 [Desktop Entry]
 Type=Application
@@ -368,6 +374,12 @@ Exec=sh -c 'rm -f "$HOME/.config/autostart/sdgvet-install-progress.desktop"; /us
 X-KDE-autostart-phase=2
 EOF
     chown "$USER_NAME:$USER_NAME" "$USER_HOME/.config/autostart/sdgvet-install-progress.desktop"
+
+    # Belt-and-suspenders: everything above under ~/.config was written as root,
+    # so re-own the whole tree to the user. A single root-owned dir/file here
+    # (especially ~/.config itself) blocks the user's apps -- e.g. the Nextcloud
+    # client can't access ~/.config/Nextcloud/nextcloud.cfg.
+    chown -R "$USER_NAME:$USER_NAME" "$USER_HOME/.config"
 else
     log "WARN: no UID 1000 user found; skipping per-user desktop defaults."
 fi
