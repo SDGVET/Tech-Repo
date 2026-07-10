@@ -36,6 +36,41 @@ fi
 
 log() { echo "[$(date '+%F %T')] $*"; }
 
+# ---- Install-progress viewer (seeded FIRST, before any slow work) ---------
+# The viewer's autostart entry must exist BEFORE anyone logs in, or nothing
+# opens: autostart is evaluated at login time, and the slow sections below
+# (Chrome, Canon driver, flatpaks) take minutes — an employee logging in
+# mid-run would get no viewer if this were seeded at the end (it used to be,
+# and that's exactly what happened). The account already exists: subiquity
+# creates it during install, before this first-boot script runs.
+cat > /usr/local/bin/sdgvet-show-install-log.sh <<'EOF'
+#!/bin/bash
+# Self-delete the autostart entry FIRST so this shows exactly once (must live
+# here, not in Exec= -- the systemd xdg-autostart generator mangles $HOME).
+rm -f "$HOME/.config/autostart/sdgvet-install-progress.desktop"
+konsole --hold -e bash -c 'echo "=== SDGVET post-install progress -- close this window when it reads: Post-install complete. ==="; echo; tail -n +1 -F /var/log/sdgvet-post-install.log'
+EOF
+chmod 755 /usr/local/bin/sdgvet-show-install-log.sh
+
+USER_NAME="$(getent passwd 1000 | cut -d: -f1)"
+USER_HOME="$(getent passwd 1000 | cut -d: -f6)"
+if [ -n "$USER_NAME" ] && [ -d "$USER_HOME" ]; then
+    log "Seeding install-progress viewer autostart for $USER_NAME..."
+    install -d -o "$USER_NAME" -g "$USER_NAME" "$USER_HOME/.config/autostart"
+    # install -d only chowns the FINAL dir; re-own ~/.config itself too
+    chown "$USER_NAME:$USER_NAME" "$USER_HOME/.config"
+    # Bare absolute path in Exec= (systemd generator garbles anything fancier);
+    # the viewer script deletes this .desktop itself, first thing.
+    cat > "$USER_HOME/.config/autostart/sdgvet-install-progress.desktop" <<'EOF'
+[Desktop Entry]
+Type=Application
+Name=SDGVET Install Progress
+Exec=/usr/local/bin/sdgvet-show-install-log.sh
+X-KDE-autostart-phase=2
+EOF
+    chown "$USER_NAME:$USER_NAME" "$USER_HOME/.config/autostart/sdgvet-install-progress.desktop"
+fi
+
 # ---- wait for network (first boot may still be associating with wifi) ----
 log "Waiting for network..."
 for i in $(seq 1 60); do
@@ -304,18 +339,8 @@ rm -f "$HOME/.config/autostart/sdgvet-appearance.desktop"
 EOF
 chmod 755 /usr/local/bin/sdgvet-first-login-appearance.sh
 
-# Progress viewer: opens a terminal tailing the WHOLE post-install log, so on
-# first login you can watch the entire run live instead of hunting for it.
-# Launched by a one-shot autostart entry (below) that removes itself. Close the
-# window when it reads "Post-install complete."
-cat > /usr/local/bin/sdgvet-show-install-log.sh <<'EOF'
-#!/bin/bash
-# Self-delete the autostart entry FIRST so this shows exactly once (must live
-# here, not in Exec= -- see the same note in the appearance helper above).
-rm -f "$HOME/.config/autostart/sdgvet-install-progress.desktop"
-konsole --hold -e bash -c 'echo "=== SDGVET post-install progress -- close this window when it reads: Post-install complete. ==="; echo; tail -n +1 -F /var/log/sdgvet-post-install.log'
-EOF
-chmod 755 /usr/local/bin/sdgvet-show-install-log.sh
+# (The install-progress viewer is created and seeded at the TOP of this
+# script, before the slow sections, so it exists by the time anyone logs in.)
 
 # Drop the one-shot autostart entry into the employee's account. The account
 # is created interactively during install as UID 1000, and this first-boot
@@ -399,22 +424,11 @@ Timeout=0
 EOF
     chown "$USER_NAME:$USER_NAME" "$USER_HOME/.config/kscreenlockerrc"
 
-    # Autostart the install-progress viewer on first login (opens a terminal
-    # tailing the whole post-install log). One-shot: it removes its own .desktop
-    # up front, so it appears exactly once during provisioning. (VetBadger's
-    # launcher + icon come from the Chrome force-install policy above, so there's
-    # nothing to pre-create here.)
-    log "Seeding install-progress viewer autostart for $USER_NAME..."
-    # Bare absolute path for the same systemd-generator reason as above; the
-    # viewer script deletes this .desktop itself, first thing.
-    cat > "$USER_HOME/.config/autostart/sdgvet-install-progress.desktop" <<'EOF'
-[Desktop Entry]
-Type=Application
-Name=SDGVET Install Progress
-Exec=/usr/local/bin/sdgvet-show-install-log.sh
-X-KDE-autostart-phase=2
-EOF
-    chown "$USER_NAME:$USER_NAME" "$USER_HOME/.config/autostart/sdgvet-install-progress.desktop"
+    # (Install-progress viewer autostart is seeded at the TOP of this script.
+    # If the employee logged in mid-run and the viewer already ran and deleted
+    # its .desktop, nothing here re-creates it. VetBadger's launcher + icon
+    # come from the Chrome force-install policy above, so there's nothing to
+    # pre-create for it either.)
 
     # Belt-and-suspenders: everything above under ~/.config was written as root,
     # so re-own the whole tree to the user. A single root-owned dir/file here
