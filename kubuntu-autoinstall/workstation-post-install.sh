@@ -142,11 +142,14 @@ flatpak install -y --noninteractive --system flathub me.proton.Pass \
 flatpak install -y --noninteractive --system flathub me.proton.Mail \
     || log "ERROR installing Proton Mail (re-run this script to retry)"
 
-# ---- Firewall (ufw) -------------------------------------------------------
-# Enable with the default policy: deny all incoming, allow all outgoing. A
-# workstation runs no inbound services (printing, Nextcloud, VetBadger are all
-# outbound), so nothing to open. Idempotent -- re-running just re-asserts it.
-log "Enabling firewall (ufw)..."
+# ---- Firewall (ufw) + SSH for remote administration ------------------------
+# Deny all incoming, allow all outgoing — except SSH, so machines can be
+# debugged from the admin laptop without walking over (Landscape covers script
+# execution, but interactive troubleshooting needs a shell). openssh-server is
+# in the autoinstall package list; install here too so hand-runs get it.
+log "Enabling firewall (ufw) with SSH allowed..."
+dpkg -s openssh-server >/dev/null 2>&1 || apt-get install -y openssh-server
+ufw allow ssh || log "ERROR allowing ssh through ufw"
 ufw --force enable || log "ERROR enabling ufw"
 
 # ---- Quiet graphical boot (Kubuntu-style Plymouth splash) -----------------
@@ -157,11 +160,16 @@ ufw --force enable || log "ERROR enabling ufw"
 # it (rebuilding the initramfs so the splash is available early) and add
 # quiet/splash to the kernel command line. Employees never see the verbose
 # boot -- it only happens during imaging, before this runs.
+# NOTE: plymouth-set-default-theme no longer exists in 26.04 (the old code
+# path always hit the WARN). Themes are picked via the default.plymouth
+# alternative now; update-initramfs bakes the theme in so it shows early.
 log "Configuring quiet graphical (Plymouth) boot..."
-if command -v plymouth-set-default-theme >/dev/null 2>&1; then
-    plymouth-set-default-theme -R kubuntu-logo || log "ERROR setting plymouth theme"
+PLYTHEME=/usr/share/plymouth/themes/kubuntu-logo/kubuntu-logo.plymouth
+if [ -f "$PLYTHEME" ]; then
+    update-alternatives --set default.plymouth "$PLYTHEME" \
+        && update-initramfs -u || log "ERROR setting plymouth theme"
 else
-    log "WARN: plymouth not installed; skipping splash theme."
+    log "WARN: kubuntu-logo plymouth theme not found; skipping splash theme."
 fi
 GRUBCFG=/etc/default/grub
 if [ -f "$GRUBCFG" ]; then
@@ -268,6 +276,13 @@ PY
 # (it writes its own ~/.config/autostart entry on first run) and shows the
 # employee the account sign-in prompt.
 command -v nextcloud >/dev/null 2>&1 && nohup nextcloud >/dev/null 2>&1 &
+
+# Self-delete the autostart entry so this runs exactly once. This rm MUST live
+# in here, not in the .desktop's Exec=: on Plasma 6 autostart entries run via
+# systemd-xdg-autostart-generator, which mangles $HOME in Exec lines
+# ("Ignoring unknown escape sequences" in the journal) -- the rm then targets a
+# literal '$HOME/...' path and the entry re-fires at every login.
+rm -f "$HOME/.config/autostart/sdgvet-appearance.desktop"
 EOF
 chmod 755 /usr/local/bin/sdgvet-first-login-appearance.sh
 
@@ -277,6 +292,9 @@ chmod 755 /usr/local/bin/sdgvet-first-login-appearance.sh
 # window when it reads "Post-install complete."
 cat > /usr/local/bin/sdgvet-show-install-log.sh <<'EOF'
 #!/bin/bash
+# Self-delete the autostart entry FIRST so this shows exactly once (must live
+# here, not in Exec= -- see the same note in the appearance helper above).
+rm -f "$HOME/.config/autostart/sdgvet-install-progress.desktop"
 konsole --hold -e bash -c 'echo "=== SDGVET post-install progress -- close this window when it reads: Post-install complete. ==="; echo; tail -n +1 -F /var/log/sdgvet-post-install.log'
 EOF
 chmod 755 /usr/local/bin/sdgvet-show-install-log.sh
@@ -296,11 +314,14 @@ if [ -n "$USER_NAME" ] && [ -d "$USER_HOME" ]; then
     # KDE, ...) from writing their config. Re-own ~/.config to the user. This is
     # why we ALSO run a broad chown of $USER_HOME/.config at the end of this block.
     chown "$USER_NAME:$USER_NAME" "$USER_HOME/.config"
+    # Exec must be a bare absolute path: Plasma 6 runs autostart entries through
+    # systemd-xdg-autostart-generator, which garbles $HOME (and quoting) in
+    # Exec= lines. The helper deletes this .desktop itself when it finishes.
     cat > "$USER_HOME/.config/autostart/sdgvet-appearance.desktop" <<'EOF'
 [Desktop Entry]
 Type=Application
 Name=SDGVET Appearance Defaults
-Exec=sh -c '/usr/local/bin/sdgvet-first-login-appearance.sh; rm -f "$HOME/.config/autostart/sdgvet-appearance.desktop"'
+Exec=/usr/local/bin/sdgvet-first-login-appearance.sh
 X-KDE-autostart-phase=2
 NoDisplay=true
 EOF
@@ -366,11 +387,13 @@ EOF
     # launcher + icon come from the Chrome force-install policy above, so there's
     # nothing to pre-create here.)
     log "Seeding install-progress viewer autostart for $USER_NAME..."
+    # Bare absolute path for the same systemd-generator reason as above; the
+    # viewer script deletes this .desktop itself, first thing.
     cat > "$USER_HOME/.config/autostart/sdgvet-install-progress.desktop" <<'EOF'
 [Desktop Entry]
 Type=Application
 Name=SDGVET Install Progress
-Exec=sh -c 'rm -f "$HOME/.config/autostart/sdgvet-install-progress.desktop"; /usr/local/bin/sdgvet-show-install-log.sh'
+Exec=/usr/local/bin/sdgvet-show-install-log.sh
 X-KDE-autostart-phase=2
 EOF
     chown "$USER_NAME:$USER_NAME" "$USER_HOME/.config/autostart/sdgvet-install-progress.desktop"
