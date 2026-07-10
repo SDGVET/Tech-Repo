@@ -330,6 +330,14 @@ PY
 # employee the account sign-in prompt.
 command -v nextcloud >/dev/null 2>&1 && nohup nextcloud >/dev/null 2>&1 &
 
+# Start Chrome once, windowless, so the WebAppInstallForceList policy actually
+# installs the VetBadger PWA -- the policy only applies while Chrome is
+# running, so on a machine where the employee never opens Chrome the icon
+# would never appear. --no-startup-window keeps it invisible; the resident
+# process is simply reused when the employee opens Chrome normally.
+command -v google-chrome >/dev/null 2>&1 && \
+    nohup google-chrome --no-startup-window --no-first-run >/dev/null 2>&1 &
+
 # Self-delete the autostart entry so this runs exactly once. This rm MUST live
 # in here, not in the .desktop's Exec=: on Plasma 6 autostart entries run via
 # systemd-xdg-autostart-generator, which mangles $HOME in Exec lines
