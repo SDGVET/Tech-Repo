@@ -48,6 +48,10 @@ cat > /usr/local/bin/sdgvet-show-install-log.sh <<'EOF'
 # Self-delete the autostart entry FIRST so this shows exactly once (must live
 # here, not in Exec= -- the systemd xdg-autostart generator mangles $HOME).
 rm -f "$HOME/.config/autostart/sdgvet-install-progress.desktop"
+# When launched into a session that is still starting up (see the
+# systemd-run below), the desktop may not be ready for windows yet.
+for i in $(seq 1 30); do pgrep -x plasmashell >/dev/null && break; sleep 2; done
+sleep 2
 konsole --hold -e bash -c 'echo "=== SDGVET post-install progress -- close this window when it reads: Post-install complete. ==="; echo; tail -n +1 -F /var/log/sdgvet-post-install.log'
 EOF
 chmod 755 /usr/local/bin/sdgvet-show-install-log.sh
@@ -69,6 +73,19 @@ Exec=/usr/local/bin/sdgvet-show-install-log.sh
 X-KDE-autostart-phase=2
 EOF
     chown "$USER_NAME:$USER_NAME" "$USER_HOME/.config/autostart/sdgvet-install-progress.desktop"
+
+    # If the employee ALREADY logged in, the autostart entry above came too
+    # late — autostart is scanned once at session start, and on wifi
+    # cloud-init (which runs this script) waits for association while SDDM
+    # does not, so a quick login reliably beats us (observed: login 40s
+    # before seeding). Launch the viewer straight into the live session;
+    # it deletes the autostart entry itself, so it still shows exactly once.
+    if systemctl --machine="$USER_NAME"@.host --user is-active default.target >/dev/null 2>&1; then
+        log "User already logged in — launching viewer into the live session..."
+        systemd-run --machine="$USER_NAME"@.host --user --collect \
+            /usr/local/bin/sdgvet-show-install-log.sh >/dev/null 2>&1 \
+            || log "WARN: could not launch viewer into live session"
+    fi
 fi
 
 # ---- wait for network (first boot may still be associating with wifi) ----
