@@ -101,7 +101,15 @@ fi
 # Chrome's apt install above is synchronous, but guard anyway so the policy is
 # never written before Chrome (and its /etc/opt/chrome tree) is fully installed.
 for i in $(seq 1 30); do dpkg -s google-chrome-stable >/dev/null 2>&1 && break; sleep 2; done
-log "Configuring VetBadger web app (Chrome force-install policy)..."
+log "Configuring VetBadger web app + extensions (Chrome policy)..."
+# ExtensionSettings (verified live on a workstation 2026-07-10):
+#  - Proton Pass (password manager) force-installed AND force-pinned to the
+#    toolbar (employees can't unpin — pin control shows as managed).
+#  - Plasma Integration (KDE media controls / notifications / KRunner tabs);
+#    its native host is the plasma-browser-integration package in the
+#    autoinstall package list — the extension does nothing without it.
+# Both apply while Chrome runs windowless (~10s), so the first-login
+# --no-startup-window launch below is enough to install everything.
 mkdir -p /etc/opt/chrome/policies/managed
 cat > /etc/opt/chrome/policies/managed/sdgvet-web-apps.json <<'EOF'
 {
@@ -112,10 +120,27 @@ cat > /etc/opt/chrome/policies/managed/sdgvet-web-apps.json <<'EOF'
       "default_launch_container": "window",
       "custom_name": "VetBadger"
     }
-  ]
+  ],
+  "ExtensionSettings": {
+    "ghmbeldphafepmbegfdlkpapadhbakde": {
+      "installation_mode": "force_installed",
+      "update_url": "https://clients2.google.com/service/update2/crx",
+      "toolbar_pin": "force_pinned"
+    },
+    "cimiefiiaegbelhefglklhhakcgmhkai": {
+      "installation_mode": "force_installed",
+      "update_url": "https://clients2.google.com/service/update2/crx"
+    }
+  }
 }
 EOF
 chmod 644 /etc/opt/chrome/policies/managed/sdgvet-web-apps.json
+# Guard: the native host is in the autoinstall package list, but that only
+# reaches machines whose USB has the current yaml — install it here too so a
+# stale USB (or a hand-run of this script) still gets a working extension.
+dpkg -s plasma-browser-integration >/dev/null 2>&1 \
+    || apt-get install -y plasma-browser-integration \
+    || log "ERROR installing plasma-browser-integration"
 
 # ---- Canon UFR-II driver v6.30 (for the MF750C II) ------------------------
 if ! dpkg -s cnrdrvcups-ufr2-us >/dev/null 2>&1; then
