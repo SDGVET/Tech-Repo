@@ -10,6 +10,15 @@
 
 set -u
 
+# ── SSH toggle ──────────────────────────────────────────────────────────────
+# 1 = testing: SSH reachable from the admin laptop (sshd enabled, port 22 open
+#     in ufw) so freshly imaged machines can be debugged remotely.
+# 0 = production: sshd disabled and port 22 firewalled.
+# FLIP TO 0 AND PUSH BEFORE IMAGING THE FINAL EMPLOYEE MACHINES — the
+# installer fetches this script from GitHub main at install time.
+# (Safe to flip on an already-imaged machine too: re-run this script by hand.)
+ENABLE_SSH_FOR_TESTING=1
+
 REPO_RAW="https://raw.githubusercontent.com/SDGVET/Tech-Repo/main"
 CANON_TARBALL="https://github.com/SDGVET/Tech-Repo/releases/download/1.0/linux-UFRII-drv-v630-us-00.tar.gz"
 WORKDIR="$(mktemp -d)"
@@ -142,14 +151,23 @@ flatpak install -y --noninteractive --system flathub me.proton.Pass \
 flatpak install -y --noninteractive --system flathub me.proton.Mail \
     || log "ERROR installing Proton Mail (re-run this script to retry)"
 
-# ---- Firewall (ufw) + SSH for remote administration ------------------------
-# Deny all incoming, allow all outgoing — except SSH, so machines can be
-# debugged from the admin laptop without walking over (Landscape covers script
-# execution, but interactive troubleshooting needs a shell). openssh-server is
-# in the autoinstall package list; install here too so hand-runs get it.
-log "Enabling firewall (ufw) with SSH allowed..."
-dpkg -s openssh-server >/dev/null 2>&1 || apt-get install -y openssh-server
-ufw allow ssh || log "ERROR allowing ssh through ufw"
+# ---- Firewall (ufw) + SSH (testing only, see ENABLE_SSH_FOR_TESTING) -------
+# Default policy: deny all incoming, allow all outgoing. While the image is
+# being tested, SSH is additionally let through so machines can be debugged
+# from the admin laptop; production machines get sshd disabled and port 22
+# closed. openssh-server is in the autoinstall package list either way (it's
+# inert while sshd is disabled), so flipping the toggle later needs no network.
+log "Enabling firewall (ufw)..."
+if [ "$ENABLE_SSH_FOR_TESTING" = "1" ]; then
+    log "TESTING mode: enabling sshd and opening port 22..."
+    dpkg -s openssh-server >/dev/null 2>&1 || apt-get install -y openssh-server
+    systemctl enable --now ssh || log "ERROR enabling sshd"
+    ufw allow ssh || log "ERROR allowing ssh through ufw"
+else
+    log "Production mode: disabling sshd and closing port 22..."
+    systemctl disable --now ssh 2>/dev/null || true
+    ufw delete allow ssh 2>/dev/null || true
+fi
 ufw --force enable || log "ERROR enabling ufw"
 
 # ---- Quiet graphical boot (Kubuntu-style Plymouth splash) -----------------
