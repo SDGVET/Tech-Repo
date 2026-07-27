@@ -8,6 +8,7 @@ to be idempotent so they can be pushed repeatedly through Landscape.
 | Script | What it does |
 |---|---|
 | `chrome-wayland-click-fix.sh` | Fixes buttons in Chrome dialogs (print preview, PWAs like VetBadger) needing a press-and-hold click on Plasma/Wayland with fractional scaling. dpkg-diverts Chrome's launcher to add `--disable-features=WaylandPerSurfaceScale,WaylandUiScale` on Wayland sessions only. Run with `remove` to undo. |
+| `landscape-queue-fix.sh` | Fixes the Landscape message backlog that stalls script/update delivery. Drops the `ActiveProcessInfo` monitor plugin (~23 KB messages that block the ordered message store) plus the unused `SwiftUsage`/`CephUsage` plugins, and clears a wedged store. Restarts the client detached so it survives being run *from* Landscape. `status` to inspect, `revert` to undo. |
 | `fix-arkscan-orientation.sh` | Re-applies `LandscapeOrientation: Minus90` in the Arkscan label printer PPDs after a CUPS/package update resets it. Run as root. |
 | `setup-audio-fix.sh` | Fixes built-in stereo speakers losing a channel after a USB headset is unplugged (PipeWire). Installs a udev rule + systemd user service that resets the card profile on unplug. See the script header for `--user` / `--usb-id` options. |
 
