@@ -12,6 +12,12 @@ to be idempotent so they can be pushed repeatedly through Landscape.
 | `fix-arkscan-orientation.sh` | Re-applies `LandscapeOrientation: Minus90` in the Arkscan label printer PPDs after a CUPS/package update resets it. Run as root. |
 | `setup-audio-fix.sh` | Fixes built-in stereo speakers losing a channel after a USB headset is unplugged (PipeWire). Installs a udev rule + systemd user service that resets the card profile on unplug. See the script header for `--user` / `--usb-id` options. |
 
+## Personal app installers
+
+| Script | What it does |
+|---|---|
+| `install-planify.sh` | Installs [Planify](https://github.com/alainm23/planify) (to-do/task manager) on CachyOS/Arch. Prefers AUR via paru/yay, falls back to Flatpak (Flathub) if no AUR helper is present. Run with `--aur` or `--flatpak` to force a method. |
+
 ## Projects
 
 - **[kubuntu-autoinstall](kubuntu-autoinstall/)** — automated install for new
