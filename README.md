@@ -11,6 +11,7 @@ to be idempotent so they can be pushed repeatedly through Landscape.
 | `landscape-queue-fix.sh` | Fixes the Landscape message backlog that stalls script/update delivery. Drops the `ActiveProcessInfo` monitor plugin (~23 KB messages that block the ordered message store) plus the unused `SwiftUsage`/`CephUsage` plugins, and clears a wedged store. Restarts the client detached so it survives being run *from* Landscape. `status` to inspect, `revert` to undo. |
 | `fix-arkscan-orientation.sh` | Re-applies `LandscapeOrientation: Minus90` in the Arkscan label printer PPDs after a CUPS/package update resets it. Run as root. |
 | `setup-audio-fix.sh` | Fixes built-in stereo speakers losing a channel after a USB headset is unplugged (PipeWire). Installs a udev rule + systemd user service that resets the card profile on unplug. See the script header for `--user` / `--usb-id` options. |
+| `flatpak-update-landscape.sh` | Weekly Flatpak update for the fleet, meant to be pasted into Landscape as a stored script (interpreter `/bin/bash`, run as root, time limit 3300 — the 300s default kills a real update mid-download). Prints pending updates, runs `flatpak update -y --noninteractive` so the ref/version table lands in the Landscape activity output, then prunes unused runtimes. Exits non-zero if the update failed, so failures are filterable in Landscape. |
 
 ## Personal app installers
 
