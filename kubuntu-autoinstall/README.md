@@ -104,7 +104,10 @@ print-manager + DYMO driver, Discover (with Flatpak backend), flatpak.
 - Printer queues: Canon MF750C II (`10.25.35.170`, set as default),
   Arkscan-Reception (`10.25.35.218`), Arkscan1 (`10.25.35.125`) with the
   Tech-Repo PPD + the Minus90 orientation fix, DYMO LabelWriter 450 Turbo
-  (only if plugged into that machine)
+  (via `install-dymo-printer.sh` — the DYMO does not have to be plugged in at
+  install time; the queue is created on every machine and waits for the
+  hardware, since that printer lives in a truck. A copy is left at
+  `/usr/local/bin/sdgvet-install-dymo.sh` for hand-runs.)
 - Disables cups-browsed (prevents duplicate auto-"driverless" Canon queues)
 - Flathub + ONLYOFFICE (Proton Pass / Proton Mail lines included, commented)
 

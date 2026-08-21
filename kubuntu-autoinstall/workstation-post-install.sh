@@ -192,12 +192,18 @@ lpadmin -p Arkscan1 -E -v socket://10.25.35.125 \
     -P /usr/local/share/ppd/Arkscan-Zebra.ppd \
     -D "Arkscan label printer 1" || log "ERROR adding Arkscan1"
 
-# DYMO LabelWriter 450 Turbo — only on machines where one is plugged in
-if lpinfo -v 2>/dev/null | grep -q 'usb://DYMO/LabelWriter%20450%20Turbo'; then
-    log "DYMO LabelWriter detected, adding queue..."
-    lpadmin -p LabelWriter-450-Turbo -E \
-        -v 'usb://DYMO/LabelWriter%20450%20Turbo' \
-        -m dymo:0/cups/model/lw450t.ppd || log "ERROR adding DYMO queue"
+# DYMO LabelWriter 450 Turbo — handled by its own script, because the queue
+# needs a non-default label size (w154h198, 2-1/8" x 2-3/4") that plain
+# lpadmin -m does not set. The printer does NOT need to be attached at install
+# time: ours lives in a truck, so the script creates the queue up front and
+# leaves it waiting, and udev brings it up when someone plugs the printer in.
+# It also drops a copy at /usr/local/bin/sdgvet-install-dymo.sh for hand-runs.
+log "Setting up DYMO LabelWriter..."
+if curl -fsSL -o /usr/local/bin/sdgvet-install-dymo.sh "$REPO_RAW/install-dymo-printer.sh"; then
+    chmod 755 /usr/local/bin/sdgvet-install-dymo.sh
+    bash /usr/local/bin/sdgvet-install-dymo.sh || log "ERROR in DYMO setup"
+else
+    log "ERROR fetching install-dymo-printer.sh"
 fi
 
 # Default printer
