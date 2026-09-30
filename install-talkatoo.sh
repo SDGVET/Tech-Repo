@@ -131,6 +131,22 @@ chown -R root:root "$ROOT"
 chmod -R u=rwX,go=rX "$ROOT"
 chmod 0666 "$PROTON_DIR/dist.lock"
 
+# 3b. Icon — the 256px PNG embedded in Talkatoo.exe (resource ICON/4), so the menu and taskbar
+#     show the Talkatoo logo instead of a generic one. Runs every time, so existing hosts get it.
+ICON=/usr/share/icons/hicolor/256x256/apps/talkatoo.png
+rm -rf "$WORK/icon"
+"$SEVENZ" e -y -o"$WORK/icon" "$ROOT/app/Talkatoo.exe" '.rsrc/*/ICON/*' >/dev/null 2>&1 || true
+ICON_SRC=$(for f in "$WORK"/icon/*; do file -b "$f" | grep -q '^PNG image data, 256 x 256' && { echo "$f"; break; }; done || true)
+if [[ -n $ICON_SRC ]]; then
+    install -D -m 0644 "$ICON_SRC" "$ICON"
+    command -v gtk-update-icon-cache >/dev/null && gtk-update-icon-cache -q /usr/share/icons/hicolor || true
+    ICON_NAME=talkatoo
+    echo "[3b] Installed $ICON"
+else
+    ICON_NAME=audio-input-microphone
+    echo "[3b] WARNING: no 256px icon found in Talkatoo.exe; using a generic icon."
+fi
+
 # 4. Launcher — per-user prefix, DPI from the Plasma session, PROTON_USE_XALIA=0 (else clicks are ignored).
 echo "[4] Writing $LAUNCHER and $DESKTOP"
 cat > "$LAUNCHER" <<EOF
@@ -185,7 +201,7 @@ Type=Application
 Name=Talkatoo
 Comment=Talkatoo dictation (runs under Proton)
 Exec=$LAUNCHER
-Icon=audio-input-microphone
+Icon=$ICON_NAME
 Terminal=false
 Categories=Office;AudioVideo;
 StartupWMClass=talkatoo.exe
