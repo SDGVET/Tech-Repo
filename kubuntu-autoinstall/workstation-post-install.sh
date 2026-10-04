@@ -4,7 +4,8 @@
 # but is safe to re-run by hand at any time:  sudo bash workstation-post-install.sh
 #
 # Installs: Google Chrome, Canon UFR-II driver, printer queues (Canon MF750C,
-# both Arkscan label printers, DYMO if attached), Flathub + ONLYOFFICE.
+# both Arkscan label printers, DYMO if attached), Flathub + ONLYOFFICE,
+# Talkatoo (under GE-Proton).
 #
 # This file is SAFE to host in the public Tech-Repo — no passwords in here.
 
@@ -233,6 +234,22 @@ flatpak install -y --noninteractive --system flathub me.proton.Pass \
     || log "ERROR installing Proton Pass (re-run this script to retry)"
 flatpak install -y --noninteractive --system flathub me.proton.Mail \
     || log "ERROR installing Proton Mail (re-run this script to retry)"
+
+# ---- Talkatoo (dictation app, Windows build under GE-Proton) ---------------
+# Handled by its own script (the same one Landscape pushes to the existing
+# fleet): it enables i386, unpacks GE-Proton + the app into /opt/talkatoo and
+# adds the launcher + menu entry. Each user's Proton prefix is built on their
+# first launch, not here. SLOW — the downloads are large, so this can add
+# many minutes to first boot; it is idempotent and skips what's already there.
+# It also drops a copy at /usr/local/bin/sdgvet-install-talkatoo.sh for
+# hand-runs (TALKATOO_UPDATE=1 to pick up a newer Talkatoo version).
+log "Installing Talkatoo (slow — large downloads)..."
+if curl -fsSL -o /usr/local/bin/sdgvet-install-talkatoo.sh "$REPO_RAW/install-talkatoo.sh"; then
+    chmod 755 /usr/local/bin/sdgvet-install-talkatoo.sh
+    bash /usr/local/bin/sdgvet-install-talkatoo.sh || log "ERROR in Talkatoo setup (re-run this script to retry)"
+else
+    log "ERROR fetching install-talkatoo.sh"
+fi
 
 # ---- Firewall (ufw) + SSH (testing only, see ENABLE_SSH_FOR_TESTING) -------
 # Default policy: deny all incoming, allow all outgoing. While the image is

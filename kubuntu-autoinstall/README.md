@@ -110,6 +110,10 @@ print-manager + DYMO driver, Discover (with Flatpak backend), flatpak.
   `/usr/local/bin/sdgvet-install-dymo.sh` for hand-runs.)
 - Disables cups-browsed (prevents duplicate auto-"driverless" Canon queues)
 - Flathub + ONLYOFFICE (Proton Pass / Proton Mail lines included, commented)
+- Talkatoo dictation app under GE-Proton (via `install-talkatoo.sh` — installs
+  to `/opt/talkatoo` with a menu entry; each user's Proton prefix is built on
+  their first launch. Slow: large downloads. A copy is left at
+  `/usr/local/bin/sdgvet-install-talkatoo.sh` for hand-runs.)
 
 **Deliberately NOT installed** (on the office machine but dev/personal):
 Docker, PostgreSQL, Node.js, VS Code, Zed, git tooling, Steam, Wine,
