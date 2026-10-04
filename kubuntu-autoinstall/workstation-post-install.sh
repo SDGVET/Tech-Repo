@@ -18,7 +18,7 @@ set -u
 # FLIP TO 0 AND PUSH BEFORE IMAGING THE FINAL EMPLOYEE MACHINES — the
 # installer fetches this script from GitHub main at install time.
 # (Safe to flip on an already-imaged machine too: re-run this script by hand.)
-ENABLE_SSH_FOR_TESTING=1
+ENABLE_SSH_FOR_TESTING=0
 
 REPO_RAW="https://raw.githubusercontent.com/SDGVET/Tech-Repo/main"
 CANON_TARBALL="https://github.com/SDGVET/Tech-Repo/releases/download/1.0/linux-UFRII-drv-v630-us-00.tar.gz"
