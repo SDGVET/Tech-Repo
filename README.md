@@ -27,6 +27,7 @@ failed activities. `DRY_RUN=1` fetches and verifies without executing.
 | `setup-audio-fix.sh` | Fixes built-in stereo speakers losing a channel after a USB headset is unplugged (PipeWire). Installs a udev rule + systemd user service that resets the card profile on unplug. See the script header for `--user` / `--usb-id` options. |
 | `flatpak-update-landscape.sh` | Weekly Flatpak update for the fleet, meant to be pasted into Landscape as a stored script (interpreter `/bin/bash`, run as root, time limit 3300 — the 300s default kills a real update mid-download). Prints pending updates, runs `flatpak update -y --noninteractive` so the ref/version table lands in the Landscape activity output, then prunes unused runtimes. Exits non-zero if the update failed, so failures are filterable in Landscape. |
 | `install-talkatoo.sh` | Installs the Talkatoo dictation desktop app (Windows/Electron) system-wide under GE-Proton — no plain Wine, no .NET. Pulls the app out of `TalkatooSetup.exe` without running it (running the installer under Proton froze Plasma), verifies GE-Proton and the app package checksums, and installs to `/opt/talkatoo` with a `talkatoo` launcher and menu entry. Each user gets their own Proton prefix on first launch, with DPI matched to their Plasma scale. Idempotent; `TALKATOO_UPDATE=1` checks for a newer version. Takes ~30 min on first run, so raise the Landscape time limit. Run as root. |
+| `syncthing-sharefolder.sh` | Moves the shared LWVC folder from the Nextcloud client to Syncthing at `~/Documents/ShareFolder` on every PC, with unraid as the hub. Finds each PC's old Nextcloud copy from the client's own config, since every client was pointed at a different folder. `seed` (base PC, as yourself) copies the folder and offers it to the NAS; `setup` (root, Landscape) installs Syncthing for the PC's user and prints the device ID to add on the NAS; `verify` compares the old copy against the synced folder and rescues anything that would be lost; `status` (default) only reports. Never deletes the old copy. Needs `NAS_ID=` — not stored in this public repo. Mode via `SHARE_MODE=` when run through `run-from-repo.sh`. See `sharefolder-syncthing-plan.md`. |
 
 ## Personal app installers
 
@@ -50,5 +51,7 @@ failed activities. `DRY_RUN=1` fetches and verifies without executing.
 
 ## Notes
 
+- `sharefolder-syncthing-plan.md` — cutover plan for moving the shared LWVC
+  folder from Nextcloud to Syncthing (`syncthing-sharefolder.sh`).
 - `kwin-dolphin-touchpad-notes.md` — KWin crash-looping and Dolphin crashes
   traced to a faulty PIXA3854 touchpad (2026-06-18).
