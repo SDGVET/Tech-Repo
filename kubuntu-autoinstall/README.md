@@ -108,6 +108,10 @@ print-manager + DYMO driver, Discover (with Flatpak backend), flatpak.
   install time; the queue is created on every machine and waits for the
   hardware, since that printer lives in a truck. A copy is left at
   `/usr/local/bin/sdgvet-install-dymo.sh` for hand-runs.)
+- OnlyOffice Canon colour fix (via `fix-onlyoffice-canon-color.sh` — adds a
+  `ColorModel` option to the Canon queue's PPD so OnlyOffice doesn't lock
+  printing to black and white. A copy is left at
+  `/usr/local/bin/sdgvet-fix-onlyoffice-canon-color.sh` for hand-runs.)
 - Disables cups-browsed (prevents duplicate auto-"driverless" Canon queues)
 - Flathub + ONLYOFFICE (Proton Pass / Proton Mail lines included, commented)
 - Talkatoo dictation app under GE-Proton (via `install-talkatoo.sh` — installs

@@ -4,8 +4,8 @@
 # but is safe to re-run by hand at any time:  sudo bash workstation-post-install.sh
 #
 # Installs: Google Chrome, Canon UFR-II driver, printer queues (Canon MF750C,
-# both Arkscan label printers, DYMO if attached), Flathub + ONLYOFFICE,
-# Talkatoo (under GE-Proton).
+# both Arkscan label printers, DYMO if attached), OnlyOffice Canon colour fix,
+# Flathub + ONLYOFFICE, Talkatoo (under GE-Proton).
 #
 # This file is SAFE to host in the public Tech-Repo — no passwords in here.
 
@@ -216,6 +216,21 @@ for PRINTER in Arkscan-Reception Arkscan1; do
     PPD="/etc/cups/ppd/${PRINTER}.ppd"
     [ -f "$PPD" ] && sed -i 's/^\*LandscapeOrientation:.*/*LandscapeOrientation: Minus90/' "$PPD"
 done
+
+# OnlyOffice colour printing on the Canon — handled by its own script (the
+# same one Landscape pushes to the existing fleet). Canon's UFR II PPD has no
+# standard ColorModel option, so OnlyOffice locks its print panel to black and
+# white; the script adds one to every colour Canon queue. Must run after the
+# Canon queue is created above. It also drops a copy at
+# /usr/local/bin/sdgvet-fix-onlyoffice-canon-color.sh for hand-runs (re-run it
+# if a driver reinstall or re-adding the printer brings the lock back).
+log "Applying OnlyOffice Canon colour fix..."
+if curl -fsSL -o /usr/local/bin/sdgvet-fix-onlyoffice-canon-color.sh "$REPO_RAW/fix-onlyoffice-canon-color.sh"; then
+    chmod 755 /usr/local/bin/sdgvet-fix-onlyoffice-canon-color.sh
+    bash /usr/local/bin/sdgvet-fix-onlyoffice-canon-color.sh apply || log "ERROR in OnlyOffice Canon colour fix"
+else
+    log "ERROR fetching fix-onlyoffice-canon-color.sh"
+fi
 
 # Stop cups-browsed from auto-creating duplicate "driverless" queues for the
 # Canon (we define our queues explicitly above)
