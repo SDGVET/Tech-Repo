@@ -10,7 +10,9 @@
 #   /opt/talkatoo/proton/GE-Proton11-7-x86_64/   Proton runtime
 #   /opt/talkatoo/app-<version>/                 app files (nupkg lib/net45/)
 #   /opt/talkatoo/app -> app-<version>           current version
+#   /opt/talkatoo/talkatoo-typer                 dictation typing bridge (uinput keyboard), see step 3c
 #   /usr/local/bin/talkatoo                      launcher; builds a per-user prefix on first run
+#   /etc/udev/rules.d/70-talkatoo-uinput.rules   lets the logged-in seat user open /dev/uinput
 #   /usr/share/applications/talkatoo.desktop     menu entry
 #
 # Per-user prefix: ~/.local/share/talkatoo-proton (created by the launcher, not by this script,
@@ -49,13 +51,14 @@ fi
 
 # 1. i386 multiarch + packages.
 #    Only libc6:i386 (/lib/ld-linux.so.2) was proven necessary; the rest follow the note's suggestion.
-#    p7zip-full provides 7z (to unpack the installer), unzip unpacks the nupkg, python3 is used for DPI.
+#    p7zip-full provides 7z (to unpack the installer), unzip unpacks the nupkg, python3 is used for DPI
+#    and the typing bridge, wl-clipboard lets the bridge paste characters a US keyboard can't type.
 if ! dpkg --print-foreign-architectures | grep -qx i386; then
     echo "[1] Enabling i386 architecture"
     dpkg --add-architecture i386
     NEED_UPDATE=1
 fi
-PKGS=(libc6:i386 libstdc++6:i386 libgl1:i386 libvulkan1:i386 p7zip-full unzip curl python3)
+PKGS=(libc6:i386 libstdc++6:i386 libgl1:i386 libvulkan1:i386 p7zip-full unzip curl python3 wl-clipboard)
 MISSING=()
 for p in "${PKGS[@]}"; do
     dpkg-query -W -f='${Status}' "$p" 2>/dev/null | grep -q "install ok installed" || MISSING+=("$p")
@@ -147,6 +150,251 @@ else
     echo "[3b] WARNING: no 256px icon found in Talkatoo.exe; using a generic icon."
 fi
 
+# 3c. Dictation typing bridge. Talkatoo types with Win32 SendInput, which under Wine only reaches other
+#     Wine windows, so dictation never landed in native apps (notes worked; they don't type). Fix:
+#       - patch the libtkey JS wrapper inside app.asar to append its commands to a spool file when the
+#         launcher sets TALKATOO_TYPE_SPOOL (asar integrity validation is fused off in Talkatoo.exe)
+#       - talkatoo-typer (started by the launcher) replays that spool through a uinput keyboard
+#       - a udev rule gives the logged-in seat user access to /dev/uinput
+#     Runs every time and always patches from the pristine app.asar.orig, so existing hosts get it.
+echo "[3c] Installing dictation typing bridge"
+TYPER=$ROOT/talkatoo-typer
+UDEV_RULE=/etc/udev/rules.d/70-talkatoo-uinput.rules
+ASAR=$(readlink -f "$ROOT/app")/resources/app.asar
+
+cat > "$TYPER" <<'TYPER_EOF'
+#!/usr/bin/env python3
+"""Talkatoo typing bridge (installed by install-talkatoo.sh).
+
+Talkatoo types with Win32 SendInput, which under Wine only reaches other Wine windows. The patched
+libtkey wrapper in app.asar appends one JSON command per line to a spool file instead; this helper
+tails that file and replays the text through a uinput virtual keyboard, so it lands in whatever
+native window has focus. Assumes a US keyboard layout.
+
+Usage: talkatoo-typer SPOOL        (TALKATOO_TYPER_DRYRUN=1 prints keys instead of sending them)
+"""
+import ctypes, fcntl, json, os, shutil, signal, struct, subprocess, sys, time
+
+KEY_DELAY = float(os.environ.get("TALKATOO_KEY_DELAY_MS", "4")) / 1000
+DRYRUN = os.environ.get("TALKATOO_TYPER_DRYRUN") == "1"
+
+EV_SYN, EV_KEY = 0, 1
+UI_SET_EVBIT, UI_SET_KEYBIT = 0x40045564, 0x40045565
+UI_DEV_SETUP, UI_DEV_CREATE = 0x405C5503, 0x5501
+KEY_BACKSPACE, KEY_TAB, KEY_ENTER, KEY_LEFTCTRL, KEY_LEFTSHIFT, KEY_SPACE, KEY_V = 14, 15, 28, 29, 42, 57, 47
+
+# char -> (keycode, shift) for a US layout
+KEYMAP = {"\n": (KEY_ENTER, False), "\t": (KEY_TAB, False), " ": (KEY_SPACE, False), "\b": (KEY_BACKSPACE, False)}
+for row, base in (("1234567890-=", 2), ("qwertyuiop[]", 16), ("asdfghjkl;'`", 30), ("\\zxcvbnm,./", 43)):
+    for i, ch in enumerate(row):
+        KEYMAP[ch] = (base + i, False)
+for plain, shifted in zip("1234567890-=[];'`\\,./", "!@#$%^&*()_+{}:\"~|<>?"):
+    KEYMAP[shifted] = (KEYMAP[plain][0], True)
+for ch in "abcdefghijklmnopqrstuvwxyz":
+    KEYMAP[ch.upper()] = (KEYMAP[ch][0], True)
+
+# Typographic characters the speech service may emit that have a plain-ASCII equivalent.
+ASCII = str.maketrans({"\u2018": "'", "\u2019": "'", "\u201c": '"', "\u201d": '"', "\u2013": "-", "\u2014": "-",
+                       "\u2026": "...", "\u00a0": " ", "\r": ""})
+
+
+class Keyboard:
+    def __init__(self):
+        if DRYRUN:
+            return
+        self.fd = os.open("/dev/uinput", os.O_WRONLY | os.O_NONBLOCK)
+        fcntl.ioctl(self.fd, UI_SET_EVBIT, EV_KEY)
+        for code in {k for k, _ in KEYMAP.values()} | {KEY_LEFTCTRL, KEY_LEFTSHIFT, KEY_V}:
+            fcntl.ioctl(self.fd, UI_SET_KEYBIT, code)
+        # struct uinput_setup { struct input_id {bustype, vendor, product, version}; char name[80]; u32 ff_effects_max; }
+        fcntl.ioctl(self.fd, UI_DEV_SETUP, struct.pack("HHHH80sI", 0x06, 0x1209, 0x7A1C, 1, b"Talkatoo virtual keyboard", 0))
+        fcntl.ioctl(self.fd, UI_DEV_CREATE)
+        time.sleep(1)  # let the compositor pick the device up before the first key
+
+    def _emit(self, code, value):
+        if DRYRUN:
+            return
+        os.write(self.fd, struct.pack("llHHi", 0, 0, EV_KEY, code, value) + struct.pack("llHHi", 0, 0, EV_SYN, 0, 0))
+        time.sleep(KEY_DELAY)
+
+    def tap(self, code, shift=False, ctrl=False):
+        if DRYRUN:
+            print(f"key {code}{' +shift' if shift else ''}{' +ctrl' if ctrl else ''}", flush=True)
+        mods = [m for m, on in ((KEY_LEFTCTRL, ctrl), (KEY_LEFTSHIFT, shift)) if on]
+        for m in mods:
+            self._emit(m, 1)
+        self._emit(code, 1)
+        self._emit(code, 0)
+        for m in reversed(mods):
+            self._emit(m, 0)
+
+
+class Typer:
+    def __init__(self, kbd):
+        self.kbd = kbd
+        self.interim = ""  # text currently on screen for the utterance still being recognised
+        self.wl_copy = shutil.which("wl-copy")
+
+    def _put(self, text):
+        """Type text; returns what actually reached the screen."""
+        done, i = "", 0
+        while i < len(text):
+            if text[i] in KEYMAP:
+                self.kbd.tap(*KEYMAP[text[i]])
+                done += text[i]
+                i += 1
+                continue
+            # Run of characters the US layout can't produce: paste it through the clipboard if we can.
+            j = i
+            while j < len(text) and text[j] not in KEYMAP:
+                j += 1
+            if self.wl_copy and subprocess.run([self.wl_copy, "--", text[i:j]], timeout=5).returncode == 0:
+                time.sleep(0.05)
+                self.kbd.tap(KEY_V, ctrl=True)
+                time.sleep(0.05)
+                done += text[i:j]
+            else:
+                print(f"talkatoo-typer: cannot type {text[i:j]!r}, skipped", file=sys.stderr, flush=True)
+            i = j
+        return done
+
+    def handle(self, cmd):
+        op, text = cmd.get("op"), str(cmd.get("text") or "").translate(ASCII)
+        if op == "type":
+            # Each interim result restates the whole utterance: keep the common prefix, retype the rest.
+            keep = 0
+            while keep < min(len(self.interim), len(text)) and self.interim[keep] == text[keep]:
+                keep += 1
+            for _ in range(len(self.interim) - keep):
+                self.kbd.tap(KEY_BACKSPACE)
+            shown = self.interim[:keep] + self._put(text[keep:])
+            self.interim = "" if cmd.get("final") else shown
+        elif op == "paste":
+            self.interim = ""
+            self._put(text)
+        elif op == "backspace":
+            self.kbd.tap(KEY_BACKSPACE)
+        elif op == "clear":
+            self.interim = ""
+
+
+def main():
+    spool = sys.argv[1]
+    lock = os.open(spool + ".lock", os.O_WRONLY | os.O_CREAT, 0o600)
+    try:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        return 0  # another typer already serves this spool
+    ctypes.CDLL(None).prctl(1, signal.SIGTERM)  # PR_SET_PDEATHSIG: exit with the launcher
+    os.close(os.open(spool, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600))
+    try:
+        kbd = Keyboard()
+    except OSError as e:
+        print(f"talkatoo-typer: cannot open /dev/uinput ({e}); dictation will not type.", file=sys.stderr)
+        return 1
+    typer = Typer(kbd)
+    with open(spool, "r", encoding="utf-8") as f:
+        buf = ""
+        while True:
+            chunk = f.readline()
+            if not chunk:
+                time.sleep(0.03)
+                continue
+            buf += chunk
+            if not buf.endswith("\n"):
+                continue  # line still being written
+            line, buf = buf, ""
+            try:
+                typer.handle(json.loads(line))
+            except Exception as e:  # never let one bad line stop dictation
+                print(f"talkatoo-typer: {e!r} on {line!r}", file=sys.stderr, flush=True)
+
+
+if __name__ == "__main__":
+    sys.exit(main())
+TYPER_EOF
+chmod 0755 "$TYPER"
+
+cat > "$WORK/libtkey-index.js" <<'SHIM_EOF'
+// Patched by install-talkatoo.sh. The stock wrapper types with Win32 SendInput, which under Wine only
+// reaches other Wine windows. When the launcher sets TALKATOO_TYPE_SPOOL, hand the text to the Linux
+// side instead (talkatoo-typer replays it through a uinput keyboard); otherwise behave as shipped.
+const spool = process.env.TALKATOO_TYPE_SPOOL;
+
+if (spool) {
+  const fs = require('fs');
+  const send = (cmd) => {
+    try {
+      fs.appendFileSync(spool, JSON.stringify(cmd) + '\n');
+    } catch (e) {
+      console.error('talkatoo-typer spool write failed', e);
+    }
+  };
+  module.exports = {
+    initializeQueue: () => send({ op: 'clear' }),
+    clearQueue: () => send({ op: 'clear' }),
+    generateKeystroke: (text, final) => send({ op: 'type', text, final: !!final }),
+    paste: (text) => send({ op: 'paste', text }),
+    backspace: () => send({ op: 'backspace' })
+  };
+} else {
+  const tkey = require('node-gyp-build')(__dirname);
+  module.exports = {
+    initializeQueue: tkey.tkey_queue_init,
+    clearQueue: tkey.tkey_queue_clear,
+    generateKeystroke: tkey.tkey_generate_keystroke,
+    paste: tkey.tkey_paste,
+    backspace: tkey.tkey_backspace
+  };
+}
+SHIM_EOF
+[[ -f "$ASAR.orig" ]] || cp -p "$ASAR" "$ASAR.orig"
+python3 - "$ASAR.orig" node_modules/@talkatoo/libtkey/index.js "$WORK/libtkey-index.js" "$ASAR.new" <<'PATCH_EOF'
+# Replace one file inside an Electron asar archive: ARCHIVE PATH/IN/ARCHIVE NEWFILE OUT
+import hashlib, json, struct, sys
+
+archive, inner, newfile, out = sys.argv[1:5]
+new = open(newfile, "rb").read()
+with open(archive, "rb") as f:
+    four, hsize, psize, jlen = struct.unpack("<IIII", f.read(16))
+    raw = f.read(jlen)
+    header = json.loads(raw)
+    base = 8 + hsize
+    f.seek(0, 2)
+    datalen = f.tell() - base
+
+    node = header
+    for part in inner.strip("/").split("/"):
+        node = node["files"][part]
+    if node.get("unpacked"):
+        sys.exit(f"{inner} is unpacked, not stored in the archive")
+
+    digest = hashlib.sha256(new).hexdigest()
+    node["size"], node["offset"] = len(new), str(datalen)  # new copy goes after the existing data
+    if "integrity" in node:
+        node["integrity"] = {"algorithm": "SHA256", "hash": digest, "blockSize": 4194304, "blocks": [digest]}
+
+    js = json.dumps(header, separators=(",", ":")).encode()
+    pad = -len(js) % 4
+    with open(out, "wb") as o:
+        o.write(struct.pack("<IIII", 4, len(js) + pad + 8, len(js) + pad + 4, len(js)) + js + b"\0" * pad)
+        f.seek(base)
+        while chunk := f.read(1 << 20):
+            o.write(chunk)
+        o.write(new)
+PATCH_EOF
+chmod 0644 "$ASAR.new"
+mv "$ASAR.new" "$ASAR"
+
+# uaccess rules must sort before 73-seat-late.rules.
+cat > "$UDEV_RULE" <<'EOF'
+# Talkatoo dictation types through a uinput virtual keyboard (install-talkatoo.sh).
+KERNEL=="uinput", SUBSYSTEM=="misc", TAG+="uaccess", OPTIONS+="static_node=uinput"
+EOF
+modprobe uinput 2>/dev/null || true
+udevadm control --reload
+udevadm trigger --action=change /dev/uinput 2>/dev/null || udevadm trigger --subsystem-match=misc || true
+
 # 4. Launcher — per-user prefix, DPI from the Plasma session, PROTON_USE_XALIA=0 (else clicks are ignored).
 echo "[4] Writing $LAUNCHER and $DESKTOP"
 cat > "$LAUNCHER" <<EOF
@@ -191,6 +439,13 @@ fi
 # App lives read-only in /opt; expose it as C:\talkatoo-app (re-pointed each launch so updates apply).
 ln -sfn /opt/talkatoo/app "$WINEPREFIX/drive_c/talkatoo-app"
 
+# Dictation typing bridge (see install-talkatoo.sh step 3c). The typer exits when this launcher does.
+if [[ -n ${XDG_RUNTIME_DIR:-} && -w /dev/uinput ]]; then
+    SPOOL="$XDG_RUNTIME_DIR/talkatoo-type.spool"
+    /opt/talkatoo/talkatoo-typer "$SPOOL" &
+    export TALKATOO_TYPE_SPOOL="Z:${SPOOL//\//\\}"
+fi
+
 exec "$PROTON" run 'C:\talkatoo-app\Talkatoo.exe' "$@"
 EOF
 chmod 0755 "$LAUNCHER"
@@ -219,6 +474,8 @@ check "Proton executable"          '[[ -x "$PROTON_DIR/proton" ]]'
 check "Proton wineserver"          '[[ -x "$PROTON_DIR/files/bin/wineserver" ]]'
 check "Talkatoo.exe installed"     '[[ -f "$ROOT/app/Talkatoo.exe" ]]'
 check "launcher installed"         '[[ -x "$LAUNCHER" ]]'
+check "typing bridge installed"    '[[ -x "$TYPER" ]] && grep -qa TALKATOO_TYPE_SPOOL "$ASAR"'
+check "uinput udev rule installed" '[[ -f "$UDEV_RULE" ]]'
 check "desktop entry installed"    '[[ -f "$DESKTOP" ]]'
 echo "  Installed version: $(readlink "$ROOT/app" 2>/dev/null || echo none)"
 
