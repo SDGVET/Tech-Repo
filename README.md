@@ -36,6 +36,12 @@ failed activities. `DRY_RUN=1` fetches and verifies without executing.
 |---|---|
 | `install-planify.sh` | Installs [Planify](https://github.com/alainm23/planify) (to-do/task manager) on CachyOS/Arch. Prefers AUR via paru/yay, falls back to Flatpak (Flathub) if no AUR helper is present. Run with `--aur` or `--flatpak` to force a method. |
 
+## Writing / notes tools
+
+| Script | What it does |
+|---|---|
+| `blb-link.py` | Turns plain scripture references in Markdown into [Blue Letter Bible](https://www.blueletterbible.org) links. BLB verse URLs are computable from book/chapter/verse, so it works offline with no lookups. Handles ranges, comma lists, chapter-only and cross-chapter refs, and common abbreviations; skips existing links, wikilinks, code blocks and frontmatter, so it is safe to re-run. Previews a diff by default — `-w` to apply, `-t esv` to change translation, `--ref "Acts 7:58"` to print a single URL. |
+
 ## Projects
 
 - **[kubuntu-autoinstall](kubuntu-autoinstall/)** — automated install for new
